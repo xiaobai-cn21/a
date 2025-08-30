@@ -1,0 +1,130 @@
+#include <string>
+#include <unordered_map>
+#include <optional>
+
+// -------------------- 错误码定义 --------------------
+enum class AuthError {
+    USER_NOT_FOUND,
+    BAD_PASSWORD,
+    DB_ERROR,
+    TOKEN_INVALID,
+    TOKEN_EXPIRED
+};
+
+// 错误码转字符串（返回给客户端用）
+inline std::string toString(AuthError e) {
+    switch (e) {
+        case AuthError::USER_NOT_FOUND: return "USER_NOT_FOUND";
+        case AuthError::BAD_PASSWORD:   return "BAD_PASSWORD";
+        case AuthError::DB_ERROR:       return "DB_ERROR";
+        case AuthError::TOKEN_INVALID:  return "TOKEN_INVALID";
+        case AuthError::TOKEN_EXPIRED:  return "TOKEN_EXPIRED";
+    }
+    return "UNKNOWN_ERROR";
+}
+
+// -------------------- 统一返回结构 --------------------
+struct AuthResult {
+    bool ok = false;           // 是否成功
+    int userId = 0;            // 唯一用户 ID
+    std::string role;          // 用户角色: factory | expert | admin | auditor
+    std::string token;         // 会话 token（仅登录时返回）
+    std::string error;         // 失败时的错误码（字符串）
+};
+
+// -------------------- 模拟存储 --------------------
+struct UserInfo {
+    int userId;
+    std::string username;
+    std::string password;  // 实际生产中应该是加密后的哈希！
+    std::string role;
+};
+
+// 模拟数据库
+static std::unordered_map<std::string, UserInfo> mockDb = {
+    {"alice", {1, "alice", "123456", "factory"}},
+    {"bob",   {2, "bob",   "password", "expert"}},
+    {"admin", {3, "admin", "admin123", "admin"}}
+};
+
+// 模拟 token 存储 (token → userId)
+static std::unordered_map<std::string, int> tokenStore;
+
+// -------------------- 工具函数 --------------------
+std::string generateToken(int userId) {
+    // 实际项目里要用 UUID/加密随机串
+    return "token_" + std::to_string(userId);
+}
+
+// -------------------- 接口实现 --------------------
+AuthResult authenticateUser(const std::string& username, const std::string& password) {
+    AuthResult res;
+
+    try {
+        auto it = mockDb.find(username);
+        if (it == mockDb.end()) {
+            res.ok = false;
+            res.error = toString(AuthError::USER_NOT_FOUND);
+            return res;
+        }
+
+        const auto& user = it->second;
+        if (user.password != password) {
+            res.ok = false;
+            res.error = toString(AuthError::BAD_PASSWORD);
+            return res;
+        }
+
+        // 成功：生成 token
+        std::string token = generateToken(user.userId);
+        tokenStore[token] = user.userId;
+
+        res.ok = true;
+        res.userId = user.userId;
+        res.role = user.role;
+        res.token = token;
+        return res;
+
+    } catch (...) {
+        res.ok = false;
+        res.error = toString(AuthError::DB_ERROR);
+        return res;
+    }
+}
+
+AuthResult validateToken(const std::string& token) {
+    AuthResult res;
+
+    try {
+        auto it = tokenStore.find(token);
+        if (it == tokenStore.end()) {
+            res.ok = false;
+            res.error = toString(AuthError::TOKEN_INVALID);
+            return res;
+        }
+
+        int uid = it->second;
+        // 这里省略 token 过期时间检查逻辑
+        // 假设 token 永不过期，如果要加过期时间，需要另存储时间戳
+
+        // 找回用户信息
+        for (auto& [name, user] : mockDb) {
+            if (user.userId == uid) {
+                res.ok = true;
+                res.userId = user.userId;
+                res.role = user.role;
+                return res;
+            }
+        }
+
+        // 没找到用户（数据库异常）
+        res.ok = false;
+        res.error = toString(AuthError::DB_ERROR);
+        return res;
+
+    } catch (...) {
+        res.ok = false;
+        res.error = toString(AuthError::DB_ERROR);
+        return res;
+    }
+}

@@ -1,3 +1,17 @@
+统一返回结构 AuthResult 的每个字段究竟干什么
+•	ok(bool): 本次调用是否成功（true 才能读取后续字段）
+•	userId(int): 成功后标识唯一用户（服务端对接房间/日志/权限都靠它）
+•	role(string): 决定能否 CREATE/JOIN、是否可踢人等（"factory"|"expert"|"admin"|"auditor"）
+•	token(string): 会话凭证（之后请求不再传密码，带 token 即可）；服务端可设置 2h 过期
+•	error(string): 失败原因码（让客户端做精确提示；服务端也可据此打点）
+服务端 C++ 接口（签名与返回约定）
+•	authenticateUser(username, password) → AuthResult
+•	成功: {ok:true, userId, role, token}
+•	失败: {ok:false, error: USER_NOT_FOUND | BAD_PASSWORD | DB_ERROR}
+•	validateToken(token) → AuthResult
+•	成功: {ok:true, userId, role}
+•	失败: {ok:false, error: TOKEN_INVALID | TOKEN_EXPIRED | DB_ERROR}
+
 #include <string>
 #include <unordered_map>
 #include <optional>
